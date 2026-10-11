@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bangkok PM2.5</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-ref: #898781;
+  --threshold: #d03b3b;
+  /* Thai PCD PM2.5 bands — the official blue→red convention, always paired with a text label */
+  --lv-1: #3bb3e8;
+  --lv-2: #6fbf3f;
+  --lv-3: #e6c200;
+  --lv-4: #f08a24;
+  --lv-5: #e03c3c;
+  --lv-none: #c3c2b7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --threshold: #e66767;
+    --lv-none: #383835;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --threshold: #e66767;
+  --lv-none: #383835;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--text-primary);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+}
+.wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 16px; }
+h1 { font-size: 22px; margin: 0; }
+.sub { color: var(--text-secondary); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+.filters label { color: var(--text-secondary); }
+select, .seg button {
+  font: inherit; color: var(--text-primary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+}
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; cursor: pointer; }
+.seg button:first-child { border-radius: 6px 0 0 6px; }
+.seg button:last-child { border-radius: 0 6px 6px 0; }
+.seg button[aria-pressed="true"] { font-weight: 600; background: var(--grid); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.tile .k { color: var(--text-secondary); font-size: 13px; }
+.tile .v { font-size: 28px; font-weight: 600; line-height: 1.2; margin-top: 4px; }
+.tile .n { color: var(--text-secondary); font-size: 13px; }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+.card h2 { font-size: 15px; margin: 0 0 2px; }
+.card .note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+#map { height: 520px; border-radius: 6px; }
+.leaflet-container { background: var(--surface-1); font: inherit; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-secondary); margin-top: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ln { width: 14px; height: 0; border-top: 2px solid; display: inline-block; }
+.ln.dash { border-top-style: dashed; }
+
+#rank { max-height: 520px; overflow-y: auto; padding-right: 4px; }
+.row {
+  display: grid; grid-template-columns: 132px 1fr 44px; align-items: center; gap: 8px;
+  padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 13px;
+}
+.row:hover, .row:focus-visible { background: var(--grid); outline: none; }
+.row.sel { background: var(--grid); font-weight: 600; }
+.row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .bar { height: 12px; border-radius: 0 4px 4px 0; min-width: 2px; }
+.row .val { text-align: right; font-variant-numeric: tabular-nums; }
+
+#trend { width: 100%; height: 300px; display: block; }
+#trend text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tip {
+  position: fixed; pointer-events: none; z-index: 1000; display: none;
+  background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+}
+.tip b { font-size: 14px; }
+.tip .t { color: var(--text-secondary); }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+.loading { opacity: .5; transition: opacity .2s; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ค่าฝุ่น PM2.5 กรุงเทพฯ ราย 50 เขต</h1>
+    <span class="sub" id="asof">กำลังโหลด…</span>
+  </header>
+
+  <div class="filters">
+    <label for="district">เขต</label>
+    <select id="district"></select>
+    <label>ช่วงเวลา</label>
+    <div class="seg" id="range">
+      <button data-h="24">24 ชม.</button>
+      <button data-h="72">3 วัน</button>
+      <button data-h="168">7 วัน</button>
+      <button data-h="720">30 วัน</button>
+    </div>
+    <label>ค่าบนแผนที่และอันดับ</label>
+    <div class="seg" id="metric">
+      <button data-m="24h">เฉลี่ย 24 ชม.</button>
+      <button data-m="1h">รายชั่วโมงล่าสุด</button>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k" id="t-avg-k">ค่าเฉลี่ยทั้งกรุงเทพฯ</div><div class="v" id="t-avg">–</div><div class="n" id="t-avg-n"></div></div>
+    <div class="tile"><div class="k" id="t-max-k">เขตที่ค่าสูงสุด</div><div class="v" id="t-max">–</div><div class="n" id="t-max-n"></div></div>
+    <div class="tile"><div class="k">เขตที่ค่าเฉลี่ย 24 ชม. เกินมาตรฐาน 37.5</div><div class="v" id="t-over">–</div><div class="n" id="t-over-n">จากทั้งหมด 50 เขต</div></div>
+    <div class="tile"><div class="k" id="t-sel-k">เขตที่เลือก</div><div class="v" id="t-sel">–</div><div class="n" id="t-sel-n"></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 id="map-title">แผนที่</h2>
+      <p class="note">คลิกเขตเพื่อดูกราฟย้อนหลัง</p>
+      <div id="map" role="img" aria-label="แผนที่ค่า PM2.5 ล่าสุดของ 50 เขต"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="card">
+      <h2>อันดับ 50 เขต (µg/m³)</h2>
+      <p class="note" id="rank-note"></p>
+      <div id="rank" role="list"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 id="trend-title">ค่ารายชั่วโมง</h2>
+    <p class="note">µg/m³ · มาตรฐานของไทยใช้ค่าเฉลี่ย 24 ชม. ให้เทียบเส้นค่าเฉลี่ย 24 ชม. กับเส้นประสีแดง</p>
+    <svg id="trend" aria-label="กราฟค่า PM2.5 รายชั่วโมง"></svg>
+    <div class="legend">
+      <span><i class="ln" style="border-color:var(--series-1)"></i><span id="lg-sel">เขตที่เลือก</span> รายชั่วโมง</span>
+      <span><i class="ln" style="border-color:var(--series-2)"></i><span id="lg-sel24">เขตที่เลือก</span> เฉลี่ย 24 ชม.</span>
+      <span><i class="ln" style="border-color:var(--series-ref)"></i>ค่าเฉลี่ยกรุงเทพฯ</span>
+      <span><i class="ln dash" style="border-color:var(--threshold)"></i>มาตรฐาน 37.5</span>
+    </div>
+  </div>
+
+  <footer>ข้อมูล: กรมควบคุมมลพิษ (Air4Thai) · ขอบเขตเขต: กรมแผนที่ทหาร ผ่าน OCHA HDX (CC BY-IGO) · อัปเดตอัตโนมัติทุก 5 นาที · เกณฑ์สีตามกรมควบคุมมลพิษ</footer>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const LEVELS = [
+  { max: 15,       range: "0–15",      label: "ดีมาก",                   v: "--lv-1" },
+  { max: 25,       range: "15.1–25",   label: "ดี",                      v: "--lv-2" },
+  { max: 37.5,     range: "25.1–37.5", label: "ปานกลาง",                 v: "--lv-3" },
+  { max: 75,       range: "37.6–75",   label: "เริ่มมีผลกระทบต่อสุขภาพ",    v: "--lv-4" },
+  { max: Infinity, range: ">75",       label: "มีผลกระทบต่อสุขภาพ",        v: "--lv-5" },
+];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const levelOf = v => v == null ? null : LEVELS.find(l => v <= l.max);
+const colorOf = v => css(levelOf(v)?.v ?? "--lv-none");
+const fmtTime = s => new Date(s).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const $ = id => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e; };
+
+const state = { latest: [], code: null, hours: 24, metric: "24h" };
+try { const s = JSON.parse(localStorage.getItem("pm25-ui") || "{}"); Object.assign(state, s); } catch {}
+const save = () => { try { localStorage.setItem("pm25-ui", JSON.stringify({ code: state.code, hours: state.hours, metric: state.metric })); } catch {} };
+
+// value shown on the map, ranking and summary tiles
+const val = d => state.metric === "24h" ? d.pm25_24h : d.pm25;
+const lvl = d => state.metric === "24h" ? d.level_24h : d.level;
+const ranked = () => [...state.latest].sort((a, b) => (val(b) ?? -1) - (val(a) ?? -1));
+const byCode = code => state.latest.find(d => d.district_code === code);
+
+// ---------- tooltip ----------
+const tip = $("tip");
+function showTip(e, nodes) {
+  tip.replaceChildren(...nodes); tip.style.display = "block";
+  const x = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8);
+  const y = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8);
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.display = "none"; };
+const districtTip = d => [
+  el("b", { textContent: val(d) == null ? "ไม่มีข้อมูล" : `${val(d)} µg/m³` }), " ",
+  el("span", { className: "t", textContent: lvl(d) ?? "" }), el("br"),
+  el("span", { textContent: `${d.district_th} (${d.district_en})` }), el("br"),
+  el("span", { className: "t", textContent: `ล่าสุด ${d.pm25 ?? "–"} · เฉลี่ย 24 ชม. ${d.pm25_24h ?? "–"} (${d.n_hours} ชม.)` }), el("br"),
+  el("span", { className: "t", textContent: d.method === "nearest_station" ? "ไม่มีสถานีในเขต ใช้สถานีที่ใกล้ที่สุด" : d.n_stations ? `เฉลี่ยจาก ${d.n_stations} สถานีในเขต` : "" }),
+];
+
+// ---------- legend ----------
+$("legend").append(...LEVELS.map(l => el("span", {},
+  el("i", { className: "sw", style: `background:var(${l.v})` }), `${l.label} (${l.range})`)));
+
+// ---------- map ----------
+const map = L.map("map", { scrollWheelZoom: false }).setView([13.75, 100.6], 10);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 16, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(map);
+let districts = null;  // GeoJSON layer, one polygon per district
+
+function styleFor(f) {
+  const d = byCode(f.properties.district_code), sel = f.properties.district_code === state.code;
+  return {
+    fillColor: colorOf(d && val(d)), fillOpacity: 0.75,
+    color: sel ? css("--text-primary") : "#ffffff", weight: sel ? 3 : 1, opacity: sel ? 1 : 0.9,
+  };
+}
+
+async function initMap() {
+  const geo = await getJSON("/static/bkk_districts.geojson");
+  districts = L.geoJSON(geo, {
+    style: styleFor,
+    onEachFeature: (f, layer) => {
+      const code = f.properties.district_code;
+      layer.on("mousemove", e => { const d = byCode(code); if (d) showTip(e.originalEvent, districtTip(d)); });
+      layer.on("mouseover", () => layer.setStyle({ fillOpacity: 0.95 }));
+      layer.on("mouseout", () => { hideTip(); layer.setStyle({ fillOpacity: 0.75 }); });
+      layer.on("click", () => select(code));
+    },
+  }).addTo(map);
+  map.fitBounds(districts.getBounds(), { padding: [8, 8] });
+  drawMap();
+}
+
+function drawMap() {
+  $("map-title").textContent = state.metric === "24h" ? "แผนที่ค่าเฉลี่ย 24 ชม." : "แผนที่ค่ารายชั่วโมงล่าสุด";
+  if (!districts) return;
+  districts.setStyle(styleFor);
+  districts.eachLayer(l => { if (l.feature.properties.district_code === state.code) l.bringToFront(); });
+}
+
+// ---------- ranking ----------
+function drawRank() {
+  $("rank-note").textContent = (state.metric === "24h" ? "ค่าเฉลี่ย 24 ชม. ที่ผ่านมา" : "ค่าล่าสุดในช่วง 6 ชั่วโมง") + " เรียงจากมากไปน้อย · คลิกเพื่อเลือกเขต";
+  const list = ranked();
+  const max = Math.max(40, ...list.map(d => val(d) ?? 0));
+  $("rank").replaceChildren(...list.map(d => {
+    const r = el("div", { className: "row" + (d.district_code === state.code ? " sel" : ""), tabIndex: 0, role: "listitem" },
+      el("span", { className: "name", textContent: d.district_th }),
+      el("span", {}, el("div", { className: "bar", style: `width:${(val(d) ?? 0) / max * 100}%;background:${colorOf(val(d))}` })),
+      el("span", { className: "val", textContent: val(d) ?? "–" }));
+    r.onmousemove = e => showTip(e, districtTip(d));
+    r.onmouseleave = hideTip;
+    r.onclick = () => select(d.district_code);
+    r.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(d.district_code); } };
+    return r;
+  }));
+}
+
+// ---------- tiles ----------
+function setTile(id, v, note) {
+  const node = $(id); node.replaceChildren();
+  if (v == null) { node.textContent = "–"; } else {
+    node.append(el("span", { textContent: v }), el("span", { className: "n", textContent: " µg/m³" }));
+  }
+  if (note !== undefined) $(id + "-n").textContent = note;
+}
+function drawTiles() {
+  const suffix = state.metric === "24h" ? " (เฉลี่ย 24 ชม.)" : " (รายชั่วโมง)";
+  const vals = ranked().filter(d => val(d) != null);
+  const avg = vals.length ? Math.round(vals.reduce((a, d) => a + val(d), 0) / vals.length * 10) / 10 : null;
+  $("t-avg-k").textContent = "ค่าเฉลี่ยทั้งกรุงเทพฯ" + suffix;
+  setTile("t-avg", avg, avg == null ? "" : levelOf(avg).label);
+  const top = vals[0];
+  $("t-max-k").textContent = "เขตที่ค่าสูงสุด" + suffix;
+  setTile("t-max", top && val(top), top ? `${top.district_th} · ${lvl(top)}` : "");
+  $("t-over").textContent = state.latest.filter(d => d.pm25_24h > 37.5).length;
+  const minHours = Math.min(...state.latest.map(d => d.n_hours));
+  $("t-over-n").textContent = minHours < 18 ? `จาก 50 เขต · บางเขตมีข้อมูลแค่ ${minHours} จาก 24 ชม.` : "จากทั้งหมด 50 เขต";
+  const s = byCode(state.code);
+  $("t-sel-k").textContent = s ? `เขต${s.district_th}${suffix}` : "เขตที่เลือก";
+  setTile("t-sel", s && val(s), !s ? "" : state.metric === "24h"
+    ? `${lvl(s) ?? ""} · ล่าสุด ${s.pm25 ?? "–"}` : `${lvl(s) ?? ""} · เฉลี่ย 24 ชม. ${s.pm25_24h ?? "–"}`);
+  const t = state.latest.map(d => d.measured_at).filter(Boolean).sort().at(-1);
+  $("asof").textContent = t ? `ข้อมูลล่าสุด ${fmtTime(t)} น.` : "ยังไม่มีข้อมูลใน 6 ชั่วโมงที่ผ่านมา";
+}
+
+// ---------- trend chart ----------
+const NS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+function drawTrend(sel, city) {
+  const svg = $("trend"); svg.replaceChildren();
+  const W = svg.clientWidth, H = svg.clientHeight, m = { t: 12, r: 16, b: 28, l: 36 };
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const all = [...sel, ...city];
+  if (!all.length) {
+    const t = svgEl("text", { x: W / 2, y: H / 2, "text-anchor": "middle" }); t.textContent = "ยังไม่มีข้อมูลในช่วงเวลานี้"; svg.append(t); return;
+  }
+  const ts = all.map(d => +new Date(d.measured_at));
+  let x0 = Math.min(...ts), x1 = Math.max(...ts);
+  if (x0 === x1) { x0 -= 3600e3; x1 += 3600e3; }
+  const yMax = Math.ceil(Math.max(45, ...all.map(d => d.pm25)) / 10) * 10;
+  const X = t => m.l + (t - x0) / (x1 - x0) * (W - m.l - m.r);
+  const Y = v => m.t + (1 - v / yMax) * (H - m.t - m.b);
+
+  for (let v = 0; v <= yMax; v += yMax > 100 ? 25 : 10) {
+    svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: css(v ? "--grid" : "--axis"), "stroke-width": 1 }));
+    const t = svgEl("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }); t.textContent = v; svg.append(t);
+  }
+  const span = x1 - x0, step = span <= 30 * 3600e3 ? 6 * 3600e3 : span <= 4 * 864e5 ? 12 * 3600e3 : span <= 8 * 864e5 ? 864e5 : 5 * 864e5;
+  for (let t = Math.ceil(x0 / step) * step; t <= x1; t += step) {
+    const lbl = svgEl("text", { x: X(t), y: H - 8, "text-anchor": "middle" });
+    lbl.textContent = new Date(t).toLocaleString("th-TH", step < 864e5
+      ? { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }
+      : { timeZone: "Asia/Bangkok", day: "numeric", month: "short" });
+    svg.append(lbl);
+  }
+  svg.append(svgEl("line", { x1: m.l, x2: W - m.r, y1: Y(37.5), y2: Y(37.5), stroke: css("--threshold"), "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
+
+  const path = (data, color, key = "pm25") => {
+    data = data.filter(p => p[key] != null);
+    if (!data.length) return;
+    // break the line on gaps longer than 2 hours (missed runs)
+    let d = "", prev = null;
+    for (const p of data) {
+      const t = +new Date(p.measured_at);
+      d += `${prev == null || t - prev > 2 * 3600e3 ? "M" : "L"}${X(t).toFixed(1)},${Y(p[key]).toFixed(1)}`;
+      prev = t;
+    }
+    svg.append(svgEl("path", { d, fill: "none", stroke: color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    if (data.length < 30) for (const p of data)
+      svg.append(svgEl("circle", { cx: X(+new Date(p.measured_at)), cy: Y(p[key]), r: 4.5, fill: color, stroke: css("--surface-1"), "stroke-width": 1.5 }));
+  };
+  path(city, css("--series-ref"));
+  path(sel, css("--series-1"));
+  path(sel, css("--series-2"), "pm25_24h");
+
+  // crosshair + tooltip snapped to nearest hour
+  const hair = svgEl("line", { y1: m.t, y2: H - m.b, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden" });
+  const dot = svgEl("circle", { r: 5, fill: css("--series-1"), stroke: css("--surface-1"), "stroke-width": 2, visibility: "hidden" });
+  svg.append(hair, dot);
+  const hours = [...new Set(ts)].sort((a, b) => a - b);
+  const byT = (arr, t) => arr.find(p => +new Date(p.measured_at) === t);
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    const t = hours.reduce((a, b) => Math.abs(X(b) - px) < Math.abs(X(a) - px) ? b : a);
+    hair.setAttribute("x1", X(t)); hair.setAttribute("x2", X(t)); hair.setAttribute("visibility", "visible");
+    const s = byT(sel, t), c = byT(city, t);
+    if (s) { dot.setAttribute("cx", X(t)); dot.setAttribute("cy", Y(s.pm25)); dot.setAttribute("visibility", "visible"); }
+    else dot.setAttribute("visibility", "hidden");
+    const name = state.latest.find(d => d.district_code === state.code)?.district_th ?? "";
+    const row = (v, label, color) => el("div", {},
+      el("i", { className: "ln", style: `border-color:${color};margin-right:6px;vertical-align:middle` }),
+      el("b", { textContent: v ?? "–" }), " ", el("span", { className: "t", textContent: label }));
+    showTip(e, [el("div", { className: "t", textContent: fmtTime(t) + " น." }),
+      row(s?.pm25, `เขต${name} รายชั่วโมง`, css("--series-1")),
+      row(s?.pm25_24h, `เขต${name} เฉลี่ย 24 ชม.${s ? ` (${s.n_hours_24h} ชม.)` : ""}`, css("--series-2")),
+      row(c?.pm25, "ค่าเฉลี่ยกรุงเทพฯ", css("--series-ref"))]);
+  };
+  svg.onmouseleave = () => { hideTip(); hair.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); };
+}
+
+// ---------- data ----------
+const getJSON = async url => { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); };
+let trendData = [[], []];
+
+async function loadTrend() {
+  $("trend").classList.add("loading");
+  const name = state.latest.find(d => d.district_code === state.code)?.district_th ?? "";
+  $("trend-title").textContent = `ค่ารายชั่วโมง เขต${name}`;
+  $("lg-sel").textContent = $("lg-sel24").textContent = `เขต${name}`;
+  trendData = await Promise.all([getJSON(`/api/district/${state.code}?hours=${state.hours}`), getJSON(`/api/bangkok?hours=${state.hours}`)]);
+  $("trend").classList.remove("loading");
+  drawTrend(...trendData);
+}
+
+async function loadLatest() {
+  state.latest = await getJSON("/api/latest");
+  if (!state.latest.some(d => d.district_code === state.code)) state.code = state.latest[0]?.district_code;
+  const sel = $("district");
+  if (!sel.options.length) {
+    [...state.latest].sort((a, b) => a.district_th.localeCompare(b.district_th, "th"))
+      .forEach(d => sel.append(el("option", { value: d.district_code, textContent: `${d.district_th} · ${d.district_en}` })));
+  }
+  sel.value = state.code;
+  drawTiles(); drawMap(); drawRank();
+}
+
+function select(code) {
+  state.code = +code; save();
+  $("district").value = state.code;
+  drawTiles(); drawMap(); drawRank(); loadTrend();
+}
+
+$("district").onchange = e => select(e.target.value);
+for (const b of $("metric").querySelectorAll("button")) {
+  b.setAttribute("aria-pressed", b.dataset.m === state.metric);
+  b.onclick = () => {
+    state.metric = b.dataset.m; save();
+    $("metric").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    drawTiles(); drawMap(); drawRank();
+  };
+}
+for (const b of $("range").querySelectorAll("button")) {
+  b.setAttribute("aria-pressed", +b.dataset.h === state.hours);
+  b.onclick = () => {
+    state.hours = +b.dataset.h; save();
+    $("range").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    loadTrend();
+  };
+}
+addEventListener("resize", () => drawTrend(...trendData));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawMap(); drawRank(); drawTrend(...trendData); });
+
+async function refresh() {
+  try { await loadLatest(); await loadTrend(); }
+  catch (e) { $("asof").textContent = "โหลดข้อมูลไม่สำเร็จ — ตรวจสอบว่า Postgres ทำงานอยู่"; }
+}
+refresh();
+initMap().catch(() => { $("map-title").textContent += " (โหลดขอบเขตเขตไม่สำเร็จ)"; });
+setInterval(refresh, 5 * 60e3);
+</script>
+</body>
+</html>

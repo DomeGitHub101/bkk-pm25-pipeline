@@ -1,0 +1,49 @@
+{
+  "stations": [
+    {
+      "stationID": "02t",
+      "nameTH": "มหาวิทยาลัยราชภัฏบ้านสมเด็จเจ้าพระยา",
+      "nameEN": "Bansomdejchaopraya Rajabhat University",
+      "areaTH": "แขวงหิรัญรูจี เขตธนบุรี, กรุงเทพฯ",
+      "areaEN": "Hiran Ruchi, Khet Thon Buri, Bangkok",
+      "stationType": "GROUND",
+      "lat": "13.732846",
+      "long": "100.487662",
+      "AQILast": {
+        "date": "2026-10-11",
+        "time": "20:00",
+        "PM25": {"color_id": "1", "aqi": "19", "value": "11.1"}
+      }
+    },
+    {
+      "stationID": "o10",
+      "nameTH": "สถานีตัวอย่าง",
+      "nameEN": "Sample station",
+      "areaTH": "แขวงคลองจั่น, เขตบางกะปิ,กรุงเทพฯ",
+      "areaEN": "Khlong Chan, Bang Kapi, Bangkok",
+      "stationType": "GROUND",
+      "lat": "13.779873",
+      "long": "100.646009",
+      "AQILast": {
+        "date": "2026-10-11",
+        "time": "24:00",
+        "PM25": {"color_id": "0", "aqi": "-1", "value": "-1"}
+      }
+    },
+    {
+      "stationID": "35t",
+      "nameTH": "ศาลากลางจังหวัดเชียงใหม่",
+      "nameEN": "Chiang Mai City Hall",
+      "areaTH": "ต.ช้างเผือก อ.เมือง, เชียงใหม่",
+      "areaEN": "Chang Phueak, Mueang, Chiang Mai",
+      "stationType": "GROUND",
+      "lat": "18.840633",
+      "long": "98.969661",
+      "AQILast": {
+        "date": "2026-10-11",
+        "time": "20:00",
+        "PM25": {"color_id": "2", "aqi": "40", "value": "22.0"}
+      }
+    }
+  ]
+}

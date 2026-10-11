@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: pytest -v
+
+  sql:
+    # Apply every init script to a fresh Postgres to make sure the schema builds.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: airflow
+          POSTGRES_PASSWORD: airflow
+          POSTGRES_DB: airflow
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U airflow" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply init scripts
+        env:
+          PGHOST: localhost
+          PGUSER: airflow
+        run: |
+          # the scripts \connect as user pm25, so both passwords go in .pgpass
+          printf 'localhost:5432:*:airflow:airflow\nlocalhost:5432:*:pm25:pm25\n' > ~/.pgpass
+          chmod 600 ~/.pgpass
+          for f in sql/init/*.sql; do
+            echo "== $f"
+            psql -v ON_ERROR_STOP=1 -d airflow -f "$f"
+          done
