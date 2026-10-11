@@ -90,6 +90,8 @@ select, .seg button {
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
 @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
 .card h2 { font-size: 15px; margin: 0 0 2px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.seg.sm button { padding: 3px 8px; font-size: 12px; }
 .card .note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
 #map { height: 520px; border-radius: 6px; }
 .leaflet-container { background: var(--surface-1); font: inherit; }
@@ -164,7 +166,13 @@ footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
       <div class="legend" id="legend"></div>
     </div>
     <div class="card">
-      <h2>อันดับ 50 เขต (µg/m³)</h2>
+      <div class="card-head">
+        <h2>อันดับ 50 เขต (µg/m³)</h2>
+        <div class="seg sm" id="sort" aria-label="เรียงลำดับ">
+          <button data-s="desc">มาก → น้อย</button>
+          <button data-s="asc">น้อย → มาก</button>
+        </div>
+      </div>
       <p class="note" id="rank-note"></p>
       <div id="rank" role="list"></div>
     </div>
@@ -201,9 +209,9 @@ const fmtTime = s => new Date(s).toLocaleString("th-TH", { timeZone: "Asia/Bangk
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e; };
 
-const state = { latest: [], code: null, hours: 24, metric: "24h" };
+const state = { latest: [], code: null, hours: 24, metric: "24h", sort: "desc" };
 try { const s = JSON.parse(localStorage.getItem("pm25-ui") || "{}"); Object.assign(state, s); } catch {}
-const save = () => { try { localStorage.setItem("pm25-ui", JSON.stringify({ code: state.code, hours: state.hours, metric: state.metric })); } catch {} };
+const save = () => { try { localStorage.setItem("pm25-ui", JSON.stringify({ code: state.code, hours: state.hours, metric: state.metric, sort: state.sort })); } catch {} };
 
 // value shown on the map, ranking and summary tiles
 const val = d => state.metric === "24h" ? d.pm25_24h : d.pm25;
@@ -272,8 +280,10 @@ function drawMap() {
 
 // ---------- ranking ----------
 function drawRank() {
-  $("rank-note").textContent = (state.metric === "24h" ? "ค่าเฉลี่ย 24 ชม. ที่ผ่านมา" : "ค่าล่าสุดในช่วง 6 ชั่วโมง") + " เรียงจากมากไปน้อย · คลิกเพื่อเลือกเขต";
-  const list = ranked();
+  $("rank-note").textContent = (state.metric === "24h" ? "ค่าเฉลี่ย 24 ชม. ที่ผ่านมา" : "ค่าล่าสุดในช่วง 6 ชั่วโมง")
+    + (state.sort === "desc" ? " เรียงจากมากไปน้อย" : " เรียงจากน้อยไปมาก") + " · คลิกเพื่อเลือกเขต";
+  let list = ranked();
+  if (state.sort === "asc") list = [...list.filter(d => val(d) != null).reverse(), ...list.filter(d => val(d) == null)];
   const max = Math.max(40, ...list.map(d => val(d) ?? 0));
   $("rank").replaceChildren(...list.map(d => {
     const r = el("div", { className: "row" + (d.district_code === state.code ? " sel" : ""), tabIndex: 0, role: "listitem" },
@@ -425,6 +435,15 @@ function select(code) {
 }
 
 $("district").onchange = e => select(e.target.value);
+for (const b of $("sort").querySelectorAll("button")) {
+  b.setAttribute("aria-pressed", b.dataset.s === state.sort);
+  b.onclick = () => {
+    state.sort = b.dataset.s; save();
+    $("sort").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    drawRank();
+    $("rank").scrollTop = 0;
+  };
+}
 for (const b of $("metric").querySelectorAll("button")) {
   b.setAttribute("aria-pressed", b.dataset.m === state.metric);
   b.onclick = () => {
